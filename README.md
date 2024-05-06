@@ -1,2 +1,2 @@
 # Heart-Disease-Analysis
-The .csv file "heart
+The .txt file "heart_disease6" includes all of the data used for analysis. The .Rmd file "
