@@ -1,0 +1,285 @@
+---
+title: "4052_Final"
+output: html_document
+date: "2024-04-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(caret)
+library(pROC)
+library(caTools)
+
+heart_disease_full <- read.table("/Users/justincarter/Downloads/heart_disease6.txt")
+
+heart_disease_full$HeartDiseaseorAttack <- as.factor(heart_disease_full$HeartDiseaseorAttack)
+heart_disease_full$HighBP <- as.factor(heart_disease_full$HighBP)
+heart_disease_full$HighChol <- as.factor(heart_disease_full$HighChol)
+heart_disease_full$CholCheck <- as.factor(heart_disease_full$CholCheck)
+heart_disease_full$Smoker <- as.factor(heart_disease_full$Smoker)
+heart_disease_full$Stroke<- as.factor(heart_disease_full$Stroke)
+heart_disease_full$Diabetes <- as.factor(heart_disease_full$Diabetes)
+heart_disease_full$Sex<- as.factor(heart_disease_full$Sex)
+heart_disease_full$Education <- as.factor(heart_disease_full$Education)
+
+heart_disease <- heart_disease_full %>% drop_na(HeartDiseaseorAttack, Stroke, Diabetes)
+```
+
+```{r}
+set.seed(2024)
+
+kfolds_logistic <- function(data, nfolds){
+  fold <- createFolds(1:nrow(data),k=nfolds,list=FALSE)
+  er_estimates <- rep(0, nfolds)
+  sens_estimates <- rep(0, nfolds)
+  spec_estimates <- rep(0, nfolds)
+  for(i in 1:nfolds){
+    train <- data[fold != i,]
+    test <-  data[fold == i,]
+    logistic_full_mod <- glm(HeartDiseaseorAttack ~., data = train, family = "binomial")
+    log_mod <- step(logistic_full_mod,scope=list(lower=~1,upper=~.), trace = FALSE)
+    predictions <- rep(0, length(test[,1]))
+    probs <- predict(log_mod, newdata = test[,2:11], type = "response")
+    predictions[probs > 0.5] <- 1
+    predictions <- as.factor(predictions)
+    er_estimates[i] <- sum(predictions != test[,1]) / length(test[,1])
+    sens_estimates[i] <- sum(predictions == 1 & test[,1] == 1) /
+                        (sum(predictions == 1 & test[,1] == 1) + 
+                        sum(predictions == 0 & test[,1] == 1))
+    spec_estimates[i] <- sum(predictions == 0 & test[,1] == 0) /
+                        (sum(predictions == 0 & test[,1] == 0) + 
+                        sum(predictions == 1 & test[,1] == 0))
+    
+  }
+  print(mean(er_estimates))
+  print(mean(sens_estimates))
+  print(mean(spec_estimates))
+}
+
+kfolds_logistic(heart_disease, 10)
+logistic_full_mod <- glm(HeartDiseaseorAttack ~., data = heart_disease, family = "binomial")
+log_mod1 <- step(logistic_full_mod,scope=list(lower=~1,upper=~.), trace = FALSE)
+
+summary(log_mod1)
+
+data_split_1 <- sample.split(heart_disease$HeartDiseaseorAttack, SplitRatio = 0.8 )
+
+train_1 <- filter(heart_disease, data_split_1 == TRUE)
+test_1 <- filter(heart_disease, data_split_1 == FALSE)
+train_1 <-  as.data.frame(train_1)
+test_1 <- as.data.frame(test_1)
+
+log_ROC_mod1 <- glm(HeartDiseaseorAttack ~ HighBP + HighChol + Smoker + Diabetes + 
+                      Stroke + Sex + BMI + Age, data = train_1, family = "binomial")
+log_ROC <- roc(test_1$HeartDiseaseorAttack, predict(log_ROC_mod1, newdata = test_1[,2:11],
+                                                           type = "response"))
+plot(log_ROC, asp = 0, print.auc = TRUE)
+```
+
+```{r}
+set.seed(2024)
+library(class)
+
+kfolds_knn <- function(data, nfolds){
+  er_estimates <- data.frame(matrix(ncol = 7, nrow = nfolds))
+  sens_estimates <- data.frame(matrix(ncol = 7, nrow = nfolds))
+  spec_estimates <- data.frame(matrix(ncol = 7, nrow = nfolds))
+  fold <- createFolds(1:nrow(data),k=nfolds,list=FALSE)
+  for(i in 1:nfolds){
+    pred_3 <- knn(as.matrix(data[fold != i, 2:11]), as.matrix(data[fold == i, 2:11]),
+                cl = data$HeartDiseaseorAttack[fold !=i], k = 3)
+    pred_5 <- knn(as.matrix(data[fold != i, 2:11]), as.matrix(data[fold == i, 2:11]),
+                cl = data$HeartDiseaseorAttack[fold !=i], k = 5)
+    pred_10 <- knn(as.matrix(data[fold != i, 2:11]), as.matrix(data[fold == i, 2:11]),
+                cl = data$HeartDiseaseorAttack[fold !=i], k = 10)
+    pred_15 <- knn(as.matrix(data[fold != i, 2:11]), as.matrix(data[fold == i, 2:11]),
+                cl = data$HeartDiseaseorAttack[fold !=i], k = 15)
+    pred_20 <- knn(as.matrix(data[fold != i, 2:11]), as.matrix(data[fold == i, 2:11]),
+                cl = data$HeartDiseaseorAttack[fold !=i], k = 20)
+    pred_25 <- knn(as.matrix(data[fold != i, 2:11]), as.matrix(data[fold == i, 2:11]),
+                cl = data$HeartDiseaseorAttack[fold !=i], k = 25)
+    
+    er_estimates[i,1] <- sum(pred_3 != data$HeartDiseaseorAttack[fold == i]) /     
+                length(data$HeartDiseaseorAttack[fold == i])
+    er_estimates[i, 2] <- sum(pred_5 != data$HeartDiseaseorAttack[fold == i]) /
+                length(data$HeartDiseaseorAttack[fold == i])
+    er_estimates[i, 3] <- sum(pred_10 != data$HeartDiseaseorAttack[fold == i]) /
+                length(data$HeartDiseaseorAttack[fold == i])
+    er_estimates[i, 4] <- sum(pred_15 != data$HeartDiseaseorAttack[fold == i]) /
+                length(data$HeartDiseaseorAttack[fold == i])
+    er_estimates[i, 5] <- sum(pred_20 != data$HeartDiseaseorAttack[fold == i]) /
+                length(data$HeartDiseaseorAttack[fold == i])
+    er_estimates[i, 6] <- sum(pred_25 != data$HeartDiseaseorAttack[fold == i]) /
+                length(data$HeartDiseaseorAttack[fold == i])
+    
+    sens_estimates[i,1] <- sum(pred_3 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) /
+                (sum(pred_3 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) + 
+                sum(pred_3 == 0 & data$HeartDiseaseorAttack[fold == i] == 1))
+    sens_estimates[i,2] <- sum(pred_5 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) /
+                (sum(pred_5 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) + 
+                sum(pred_5 == 0 & data$HeartDiseaseorAttack[fold == i] == 1))
+    sens_estimates[i,3] <- sum(pred_10 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) /
+                (sum(pred_10 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) + 
+                sum(pred_10 == 0 & data$HeartDiseaseorAttack[fold == i] == 1))
+    sens_estimates[i,4] <- sum(pred_15 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) /
+                (sum(pred_15 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) + 
+                sum(pred_15 == 0 & data$HeartDiseaseorAttack[fold == i] == 1))
+    sens_estimates[i,5] <- sum(pred_20 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) /
+                (sum(pred_20 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) + 
+                sum(pred_20 == 0 & data$HeartDiseaseorAttack[fold == i] == 1))
+    sens_estimates[i,6] <- sum(pred_25 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) /
+                (sum(pred_25 == 1 & data$HeartDiseaseorAttack[fold == i] == 1) + 
+                sum(pred_25 == 0 & data$HeartDiseaseorAttack[fold == i] == 1))
+    
+    
+    spec_estimates[i,1] <- sum(pred_3 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) /
+                (sum(pred_3 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) + 
+                sum(pred_3 == 1 & data$HeartDiseaseorAttack[fold == i] == 0))
+    spec_estimates[i,2] <- sum(pred_5 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) /
+                (sum(pred_5 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) + 
+                sum(pred_5 == 1 & data$HeartDiseaseorAttack[fold == i] == 0))
+    spec_estimates[i,3] <- sum(pred_10 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) /
+                (sum(pred_10 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) + 
+                sum(pred_10 == 1 & data$HeartDiseaseorAttack[fold == i] == 0))
+    spec_estimates[i,4] <- sum(pred_15 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) /
+                (sum(pred_15 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) + 
+                sum(pred_15 == 1 & data$HeartDiseaseorAttack[fold == i] == 0))
+    spec_estimates[i,5] <- sum(pred_20 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) /
+                (sum(pred_20 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) + 
+                sum(pred_20 == 1 & data$HeartDiseaseorAttack[fold == i] == 0))
+    spec_estimates[i,6] <- sum(pred_25 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) /
+                (sum(pred_25 == 0 & data$HeartDiseaseorAttack[fold == i] == 0) + 
+                sum(pred_25 == 1 & data$HeartDiseaseorAttack[fold == i] == 0))
+  }
+  output1 <- data.frame(matrix(data = c(mean(er_estimates[,1]), mean(er_estimates[,2]),
+                                      mean(er_estimates[,3]), mean(er_estimates[,4]),
+                                      mean(er_estimates[,5]), mean(er_estimates[,6]),
+                                      mean(sens_estimates[,1]), mean(sens_estimates[,2]),
+                                      mean(sens_estimates[,3]), mean(sens_estimates[,4]),
+                                      mean(sens_estimates[,5]), mean(sens_estimates[,6]),
+                                      mean(spec_estimates[,1]), mean(spec_estimates[,2]),
+                                      mean(spec_estimates[,3]), mean(spec_estimates[,4]),
+                                      mean(spec_estimates[,5]), mean(spec_estimates[,6])),
+                                      nrow=6, ncol=3))
+  
+  colnames(output1) <- c("Error Rate", "Sensitivity", "Specificity")
+  rownames(output1) <- c("k=3", "k=5", "k=10", "k=15", "k=20", "k=25")
+  print(output1)
+}
+
+kfolds_knn(heart_disease, 10)
+knn_mod_1 <- knn(train_1[,2:11], test_1[,2:11], cl = train_1$HeartDiseaseorAttack, k = 3, 
+               prob = TRUE)
+knn_probs <- attr(knn_mod_1, "prob")
+knn_probs <- 1 - knn_probs
+knn_roc <- roc(test_1$HeartDiseaseorAttack, knn_probs)
+plot(knn_roc, asp = 0, print.auc = TRUE)
+```
+
+```{r}
+set.seed(2024)
+library(randomForest)
+
+tuned_rf_1 <- tuneRF(x = heart_disease[,2:11], y = heart_disease[,1], 
+                     ntreeTry = 500, stepFactor = 1.5, improve = 1e-5)
+
+RF_1 <- randomForest(x = heart_disease[,2:11], y = heart_disease[,1], mtry = 2, ntree = 500)
+print(RF_1)
+varImpPlot(RF_1, main = "Importance")
+
+RF_ROC_mod_1 <- randomForest(x = train_1[,2:11], y = train_1[,1], mtry = 2, ntree = 500)
+RF_probs_1 <- predict(RF_ROC_mod_1, newdata = test_1[,2:11], type = "prob")
+RF_probs_1 <- RF_probs_1[, 2]
+RF_ROC_1 <- roc(test_1$HeartDiseaseorAttack, RF_probs_1)
+plot(RF_ROC_1, asp = 0, print.auc = TRUE)
+```
+```{r}
+library(nnet)
+set.seed(2024)
+
+heart_disease_iter <- heart_disease_full
+summary(heart_disease_iter)
+heart_disease_iter$HeartDiseaseorAttack[is.na(heart_disease_iter$HeartDiseaseorAttack)] <- 0
+heart_disease_iter$Stroke[is.na(heart_disease_iter$Stroke)] <- 0
+heart_disease_iter$Diabetes[is.na(heart_disease_iter$Diabetes)] <- 0
+
+for(i in 1:20){
+  m_HeartDiseaseorAttack <- multinom(HeartDiseaseorAttack ~.,heart_disease_iter, 
+                      subset=!is.na(heart_disease_full$HeartDiseaseorAttack),trace=FALSE)
+  heart_disease_pred <- predict(m_HeartDiseaseorAttack,heart_disease_iter[is.na(heart_disease_full$HeartDiseaseorAttack),])
+  heart_disease_iter$HeartDiseaseorAttack[is.na(heart_disease_full$HeartDiseaseorAttack)] <- heart_disease_pred
+    
+  m_Stroke <- multinom(Stroke ~., heart_disease_iter, subset=!is.na(heart_disease_full$Stroke),trace=FALSE)
+  Stroke_pred <- predict(m_Stroke,heart_disease_iter[is.na(heart_disease_full$Stroke),])
+  heart_disease_iter$Stroke[is.na(heart_disease_full$Stroke)] <- Stroke_pred
+  
+  m_Diabetes <- multinom(Diabetes ~., heart_disease_iter, subset=!is.na(heart_disease_full$Diabetes),trace=FALSE)
+  Diabetes_pred <- predict(m_Diabetes,heart_disease_iter[is.na(heart_disease_full$Diabetes),])
+  heart_disease_iter$Diabetes[is.na(heart_disease_full$Diabetes)] <- Diabetes_pred
+}
+summary(heart_disease_iter)
+```
+```{r}
+set.seed(2024)
+kfolds_logistic(heart_disease_iter, 10)
+logistic_full_mod_1 <- glm(HeartDiseaseorAttack ~., data = heart_disease_iter, family = "binomial")
+log_mod2 <- step(logistic_full_mod,scope=list(lower=~1,upper=~.), trace = FALSE)
+
+summary(log_mod1)
+
+data_split_2 <- sample.split(heart_disease_iter$HeartDiseaseorAttack, SplitRatio = 0.8 )
+
+train_2 <- filter(heart_disease_iter, data_split_2 == TRUE)
+test_2 <- filter(heart_disease_iter, data_split_2 == FALSE)
+train_2 <-  as.data.frame(train_2)
+test_2 <- as.data.frame(test_2)
+
+log_ROC_mod2 <- glm(HeartDiseaseorAttack ~ HighBP + HighChol + Smoker + Diabetes + 
+                      Stroke + Sex + BMI + Age, data = train_2, family = "binomial")
+log_ROC_1 <- roc(test_2$HeartDiseaseorAttack, predict(log_ROC_mod2, newdata = test_2[,2:11],
+                                                           type = "response"))
+plot(log_ROC_1, asp = 0, print.auc = TRUE)
+```
+```{r}
+set.seed(2024)
+
+kfolds_knn(heart_disease_iter, 10)
+knn_mod_2 <- knn(train_2[,2:11], test_2[,2:11], cl = train_2$HeartDiseaseorAttack, k = 3, 
+               prob = TRUE)
+knn_probs_1 <- attr(knn_mod_2, "prob")
+knn_probs_1 <- 1 - knn_probs_1
+knn_roc_1 <- roc(test_2$HeartDiseaseorAttack, knn_probs_1)
+plot(knn_roc_1, asp = 0, print.auc = TRUE)
+```
+```{r}
+set.seed(2024)
+
+tuned_rf_2 <- tuneRF(x = heart_disease_iter[,2:11], y = heart_disease_iter[,1], 
+                     ntreeTry = 500, stepFactor = 1.5, improve = 1e-5)
+
+RF_2 <- randomForest(x = heart_disease_iter[,2:11], y = heart_disease_iter[,1], mtry = 2, ntree = 500)
+print(RF_2)
+varImpPlot(RF_2, main = "Importance")
+
+RF_ROC_mod_2 <- randomForest(x = train_2[,2:11], y = train_2[,1], mtry = 2, ntree = 500)
+RF_probs_2 <- predict(RF_ROC_mod_2, newdata = test_2[,2:11], type = "prob")
+RF_probs_2 <- RF_probs_2[, 2]
+RF_ROC_2 <- roc(test_2$HeartDiseaseorAttack, RF_probs_2)
+plot(RF_ROC_2, asp = 0, print.auc = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
